@@ -170,6 +170,7 @@ details.grp[open] summary::before{content:"－ "}
 .sug{margin-top:6px}
 .divider{height:1px;background:var(--line);margin:16px 0 4px}
 .amtprev{font-size:22px;font-family:var(--serif);font-weight:600;text-align:center;padding:10px;background:#fff;border-radius:12px;border:1px solid var(--line);min-height:56px}
+.ex-sticky{position:sticky;top:-14px;z-index:3;background:var(--bg);padding:6px 0 10px;margin:-6px 0 0}
 .sizegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(98px,1fr));gap:8px}
 .sizebtn{border:1px solid var(--line);background:#fff;border-radius:12px;padding:9px 6px;text-align:center}
 .sizebtn small{display:block;color:var(--sub);font-size:11px}
@@ -782,7 +783,12 @@ function updateSheet(id,body,foot){
   $$('.tabs',sb).forEach((t,i)=>{if(tl[i]!=null)t.scrollLeft=tl[i]});
   if(foot!==undefined){const sf=$('.sheet-foot',bd);if(sf)sf.innerHTML=foot}
 }
-function closeSheet(id){const bd=$(`.backdrop[data-sheet="${id}"]`);if(bd){bd.remove();if(id==='builder')B=null}}
+function closeSheet(id){const bd=$(`.backdrop[data-sheet="${id}"]`);if(bd){bd.remove();if(id==='builder')B=null;if(id==='export')afterExportClose()}}
+function afterExportClose(){
+  exSave.flush();
+  if(S.view==='edit'&&S.cur){renderPhotoSec();previewSoon()}
+  else if(S.view==='view'&&S.viewId){renderView(S.viewId)}
+}
 function confirmBox(msg,ok='OK',danger=false){
   return new Promise(res=>{
     const bd=openSheet('confirm','確認',`<p style="margin:4px 0 6px;font-size:15.5px">${esc(msg)}</p>`,`<button class="btn" data-x="no">キャンセル</button><button class="btn ${danger?'accent':'primary'}" data-x="yes">${esc(ok)}</button>`,{modal:true});
@@ -1142,13 +1148,29 @@ function updateBPrev(){const el=$('#b-prev');if(el)el.innerHTML=esc(bSentence())
 
 /* ---- export / paper ---- */
 function paperBody(r){
-  return`<div class="bl" style="margin-top:0">用紙サイズ</div>
+  const pg=pageDims(S.settings.lastSize,S.settings.lastOrient);
+  const side=isSidePlace(r),sz=Math.round(photoSizeOf(r,side)*100),pl=r.photoPlace||'auto';
+  return`<div class="ex-sticky"><div class="paper" id="ex-paper" style="max-width:min(520px, calc(38vh * ${(pg.w/pg.h).toFixed(4)}))"><canvas id="ex-canvas"></canvas></div></div>
+  ${r.photo?`<div class="bl">写真の配置</div>
+  <div class="seg">${[['auto','自動'],['left','左'],['right','右'],['top','上'],['bottom','下']].map(([k,l])=>`<button class="${pl===k?'on':''}" data-act="ex-place" data-v="${k}">${l}</button>`).join('')}</div>
+  <div class="bl">写真の大きさ</div>
+  <div class="slider" style="grid-template-columns:1fr 46px"><input type="range" min="20" max="75" value="${sz}" data-exf="photoSize"><span id="ex-psize">${sz}%</span></div>
+  ${r.photoMode==='crop'?`<div class="bl">写真の切り抜き位置</div>
+  <div class="slider"><span>左右</span><input type="range" min="0" max="100" value="${Math.round((r.panX??.5)*100)}" data-exf="panX"></div>
+  <div class="slider"><span>上下</span><input type="range" min="0" max="100" value="${Math.round((r.panY??.5)*100)}" data-exf="panY"></div>
+  <div class="slider"><span>拡大</span><input type="range" min="100" max="300" value="${Math.round((r.zoom||1)*100)}" data-exf="zoom"></div>`:''}
+  <div class="row" style="margin-top:8px"><button class="btn small ghost" data-act="ex-preset">写真の配置と大きさを戻す</button></div>
+  <div class="divider"></div>`:''}
+  <div class="bl">用紙サイズ</div>
   <div class="sizegrid">${SIZES.map(s=>`<button class="sizebtn ${S.settings.lastSize===s.k?'on':''}" data-act="size" data-v="${s.k}">${s.l}<small>${s.w}×${s.h}mm</small></button>`).join('')}</div>
   <div class="bl">向き</div>
-  <div class="seg"><button class="${S.settings.lastOrient==='landscape'?'on':''}" data-act="orient" data-v="landscape">横（写真が左）</button><button class="${S.settings.lastOrient==='portrait'?'on':''}" data-act="orient" data-v="portrait">縦（写真が上）</button></div>
-  <p class="hint">選んだサイズは次回も使われます。文字量が多いときは自動で文字を小さくして1枚に収めます。</p>
-  <div class="paper" id="ex-paper" style="margin-top:12px;max-width:520px"><canvas id="ex-canvas"></canvas></div>`;
+  <div class="seg"><button class="${S.settings.lastOrient==='landscape'?'on':''}" data-act="orient" data-v="landscape">横</button><button class="${S.settings.lastOrient==='portrait'?'on':''}" data-act="orient" data-v="portrait">縦</button></div>
+  <p class="hint">選んだサイズは次回も使われます。文字量が多いときは自動で文字を小さくして1枚に収めます。</p>`;
 }
+const exSave=debounce(()=>{const r=exportTarget;if(!r||r===S.cur)return;r.updatedAt=Date.now();Store.put(clone(r)).catch(()=>toast('保存できませんでした'))},700);
+function exChanged(){if(!exportTarget)return;if(exportTarget===S.cur){S.cur.updatedAt=Date.now();saveSoon()}else exSave()}
+let exRaf=0;
+function exRedraw(){cancelAnimationFrame(exRaf);exRaf=requestAnimationFrame(()=>drawInto($('#ex-canvas'),exportTarget))}
 let exportTarget=null;
 function openExport(r,justPaper){
   exportTarget=r;
@@ -1294,6 +1316,8 @@ document.addEventListener('click',async e=>{
     case'size':S.settings.lastSize=v;saveSettingsSoon();refreshExport();break;
     case'orient':S.settings.lastOrient=v;saveSettingsSoon();refreshExport();break;
     case'ex-pdf':doExportPdf();break;
+    case'ex-place':{const r=exportTarget;if(!r)break;const was=isSidePlace(r);r.photoPlace=v;if(isSidePlace(r)!==was)r.photoSize=null;exChanged();refreshExport();break}
+    case'ex-preset':{const r=exportTarget;if(!r)break;r.photoPlace='auto';r.photoSize=null;exChanged();refreshExport();break}
     case'backup':doBackup();break;
     case'icon-dl':saveFile('recipe-note-icon.png',dataURLtoBlob(ICON_PNG));break;
     case'ex-img':doExportImg();break;
@@ -1348,6 +1372,12 @@ document.addEventListener('input',e=>{
   if(el.id==='search'){S.q=el.value;const pos=el.selectionStart;renderList();const s=$('#search');s.focus();try{s.setSelectionRange(pos,pos)}catch(_){}return}
   if(el.id==='pk-q'){PK.q=el.value;const pos=el.selectionStart;refreshPicker();const i=$('#pk-q');i.focus();try{i.setSelectionRange(pos,pos)}catch(_){}return}
   if(el.id==='am-raw'){AM.raw=el.value;AM.num='';AM.unit='';AM.word='';const p=$('#am-prev');if(p)p.textContent=el.value;return}
+  if(el.dataset.exf&&exportTarget){
+    const k=el.dataset.exf,v=+el.value;const r=exportTarget;
+    if(k==='photoSize'){r.photoSize=v/100;const l=$('#ex-psize');if(l)l.textContent=v+'%'}
+    else if(k==='zoom')r.zoom=v/100;else r[k]=v/100;
+    exChanged();exRedraw();return;
+  }
   if(el.dataset.bf&&B){B.cur.p[el.dataset.bf]=el.value;updateBPrev();return}
   if(el.dataset.sf){const k=el.dataset.sf;S.settings[k]=el.type==='checkbox'?el.checked:el.value;saveSettingsSoon();if(S.cur){if(k==='period')regenSteps();previewSoon()}return}
   if(el.dataset.gl!==undefined&&S.cur){S.cur.groupLabels[+el.dataset.gl]=el.value;changed();return}
