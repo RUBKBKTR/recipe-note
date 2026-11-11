@@ -1,0 +1,16 @@
+{
+  "name": "レシピノート",
+  "short_name": "レシピノート",
+  "description": "料理の写真・材料・作り方を記録して、印刷用PDFにできるレシピ帳",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f1ec",
+  "theme_color": "#f4f1ec",
+  "icons": [
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}
