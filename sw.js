@@ -1,5 +1,5 @@
 // レシピノート service worker
-const V = 'recipe-note-v2';
+const V = 'recipe-note-v3';
 const FONTS = 'recipe-note-fonts';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 
@@ -21,7 +21,7 @@ self.addEventListener('fetch', e => {
     if (req.mode === 'navigate') {
       // 通信できるときは最新を取得、オフラインならキャッシュ
       e.respondWith(
-        fetch(req).then(r => { const c = r.clone(); caches.open(V).then(x => x.put('./index.html', c)); return r; })
+        fetch(req, { cache: 'no-cache' }).then(r => { const c = r.clone(); caches.open(V).then(x => x.put('./index.html', c)); return r; })
           .catch(() => caches.match('./index.html'))
       );
       return;
