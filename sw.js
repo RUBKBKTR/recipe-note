@@ -1,5 +1,5 @@
 // レシピノート service worker
-const V = 'recipe-note-v1';
+const V = 'recipe-note-v2';
 const FONTS = 'recipe-note-fonts';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 

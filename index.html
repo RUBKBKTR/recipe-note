@@ -52,6 +52,11 @@ input,textarea,select{font:inherit;font-size:16px;color:inherit}
 .syncline{padding:8px 18px 0;font-size:12px;color:var(--sub)}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:14px;padding:14px 16px 120px}
 @media(min-width:700px){.grid{grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:18px;padding:18px 22px 120px}}
+.cardwrap{position:relative;display:flex}
+.cardwrap .card{flex:1}
+.card-menu{position:absolute;top:8px;right:8px;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.94);border:none;display:grid;place-items:center;box-shadow:0 1px 4px rgba(0,0,0,.18);padding:0;font-size:18px;line-height:1;color:var(--ink)}
+.menu-list{display:flex;flex-direction:column;gap:8px}
+.menu-list .btn{text-align:left;padding:13px 16px;border-radius:14px;font-size:15.5px}
 .card{background:#fff;border-radius:14px;overflow:hidden;border:1px solid var(--line);text-align:left;padding:0;display:flex;flex-direction:column}
 .card .thumb{aspect-ratio:4/3;background:#ece8e1;width:100%;object-fit:cover;display:block}
 .card .thumb.empty{display:grid;place-items:center;color:var(--faint);font-size:12px;letter-spacing:.2em}
@@ -237,7 +242,7 @@ const S={
 };
 try{const ls=JSON.parse(localStorage.getItem('rn-settings')||'null'); if(ls) Object.assign(S.settings,ls);}catch(e){}
 
-function newRecipe(){return{id:'r'+uid(),title:'',servings:'',memo:'',photo:null,photoMode:'fit',cropRatio:'1:1',panX:.5,panY:.5,zoom:1,groupStyle:'circled',groupLabels:['','','','','',''],ingredients:[],steps:[],createdAt:Date.now(),updatedAt:Date.now()}}
+function newRecipe(){return{id:'r'+uid(),title:'',servings:'',memo:'',photo:null,photoMode:'fit',cropRatio:'1:1',panX:.5,panY:.5,zoom:1,photoPlace:'auto',photoSize:null,groupStyle:'circled',groupLabels:['','','','','',''],ingredients:[],steps:[],createdAt:Date.now(),updatedAt:Date.now()}}
 function normalize(r){
   const o=Object.assign(newRecipe(),r||{});
   if(!Array.isArray(o.ingredients))o.ingredients=[];
@@ -490,27 +495,36 @@ function layout(ctx,k,pg,r,o,f,draw){
   y+=ts*0.9+(tl.length-1)*ts*1.25+6*U;
   const top=y,memo=(r.memo||'').trim(),hasPhoto=!!r.photo;
   let over=false;
-  if(L&&hasPhoto){
-    const lw=cw*0.46,gap=8.5*U,rx=mx+lw+gap,rw=cw-lw-gap;
-    const memoH=memo?memoBlock(ctx,mx,0,lw,U,f,memo,false):0;
+  const place=photoPlaceOf(r,L),side=place==='left'||place==='right';
+  const size=photoSizeOf(r,side);
+  if(hasPhoto&&side){
+    const lw=cw*size,gap=8.5*U,tw=cw-lw-gap;
+    const px=place==='left'?mx:mx+cw-lw,tx=place==='left'?mx+lw+gap:mx;
+    const memoH=memo?memoBlock(ctx,px,0,lw,U,f,memo,false):0;
     const avail=Math.max(bottom-top-(memo?memoH+5*U:0),25*U);
-    const pr=photoRect(r,o.img,mx,top,lw,avail,false);
+    const pr=photoRect(r,o.img,px,top,lw,avail,false);
+    if(place==='right')pr.x=px+lw-pr.w;
     if(draw)drawPhoto(ctx,o.img,r,pr,1.1*U);
-    if(memo){const e=memoBlock(ctx,mx,pr.y+pr.h+5*U,lw,U,f,memo,draw);if(e>bottom)over=true}
-    let e=ingBlock(ctx,rx,top,rw,U,f,r,draw);
-    e=stepBlock(ctx,rx,e+7.5*U*f,rw,U,f,r,draw);
+    if(memo){const e=memoBlock(ctx,px,pr.y+pr.h+5*U,lw,U,f,memo,draw);if(e>bottom)over=true}
+    let e=ingBlock(ctx,tx,top,tw,U,f,r,draw);
+    e=stepBlock(ctx,tx,e+7.5*U*f,tw,U,f,r,draw);
     if(e>bottom)over=true;
   }else{
     let y2=top;
-    if(hasPhoto){const maxH=(bottom-top)*0.44*(0.45+0.55*f);const pr=photoRect(r,o.img,mx,top,cw,maxH,true);if(draw)drawPhoto(ctx,o.img,r,pr,1.1*U);y2=pr.y+pr.h+6.5*U}
+    const maxH=(bottom-top)*size*(0.45+0.55*f);
+    if(hasPhoto&&place==='top'){const pr=photoRect(r,o.img,mx,top,cw,maxH,true);if(draw)drawPhoto(ctx,o.img,r,pr,1.1*U);y2=pr.y+pr.h+6.5*U}
     const lw=cw*(L?0.4:0.42),gap=(L?9:7)*U,rx=mx+lw+gap,rw=cw-lw-gap;
     let yl=ingBlock(ctx,mx,y2,lw,U,f,r,draw);
     if(memo)yl=memoBlock(ctx,mx,yl+7*U*f,lw,U,f,memo,draw);
     const yr=stepBlock(ctx,rx,y2,rw,U,f,r,draw);
-    if(Math.max(yl,yr)>bottom)over=true;
+    let yEnd=Math.max(yl,yr);
+    if(hasPhoto&&place==='bottom'){const pr=photoRect(r,o.img,mx,yEnd+7*U,cw,maxH,true);if(draw)drawPhoto(ctx,o.img,r,pr,1.1*U);yEnd=pr.y+pr.h}
+    if(yEnd>bottom)over=true;
   }
   return{over};
 }
+function photoPlaceOf(r,L){const p=r.photoPlace;return['left','right','top','bottom'].includes(p)?p:(L?'left':'top')}
+function photoSizeOf(r,side){const v=+r.photoSize;return v>=0.2&&v<=0.75?v:(side?0.46:0.44)}
 function renderPage(ctx,W,H,pg,r,o){
   const k=W/pg.w;
   ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#fff';ctx.fillRect(0,0,W,H);ctx.textBaseline='alphabetic';
@@ -803,7 +817,7 @@ function cardHTML(r){
   const u=photoURL(r.photo);
   const n=r.ingredients.filter(i=>i.name).length,s=r.steps.filter(x=>(x.text||'').trim()).length;
   const d=new Date(r.updatedAt||Date.now());
-  return`<button class="card" data-act="open" data-id="${esc(r.id)}">${u?`<img class="thumb" loading="lazy" src="${esc(u)}" alt="">`:`<div class="thumb empty">NO PHOTO</div>`}<div class="t">${esc(r.title||'無題のレシピ')}</div><div class="m">材料${n}・手順${s}　${d.getMonth()+1}/${d.getDate()}</div></button>`;
+  return`<div class="cardwrap"><button class="card" data-act="open" data-id="${esc(r.id)}">${u?`<img class="thumb" loading="lazy" src="${esc(u)}" alt="">`:`<div class="thumb empty">NO PHOTO</div>`}<div class="t">${esc(r.title||'無題のレシピ')}</div><div class="m">材料${n}・手順${s}　${d.getMonth()+1}/${d.getDate()}</div></button><button class="card-menu" data-act="card-menu" data-id="${esc(r.id)}" aria-label="メニュー">⋯</button></div>`;
 }
 function onData(){
   if(S.view==='list'){const f=document.activeElement&&document.activeElement.id==='search';renderList();if(f){const s=$('#search');s.focus();s.setSelectionRange(s.value.length,s.value.length)}}
@@ -885,6 +899,7 @@ function renderEditor(){
       <section class="sec" id="sec-ings"></section>
       <section class="sec" id="sec-steps"></section>
       <section class="sec"><h3>メモ（任意）</h3><textarea class="fld" data-f="memo" rows="2" placeholder="コツ・保存方法など。印刷物にも小さく載ります">${esc(r.memo)}</textarea></section>
+      <div style="padding:4px 12px 24px;display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap"><button class="btn" data-act="leave">編集を終える</button><button class="btn danger" data-act="del-cur">このレシピを削除</button></div>
     </div>
     <div class="pv-pane">
       <div class="pv-bar"><span class="note grow">プレビュー</span><button class="btn small" data-act="paper" id="paperbtn"></button></div>
@@ -917,11 +932,18 @@ function renderPhotoSec(){
       <div class="slider"><span>左右</span><input type="range" min="0" max="100" value="${Math.round((r.panX??.5)*100)}" data-f="panX"></div>
       <div class="slider"><span>上下</span><input type="range" min="0" max="100" value="${Math.round((r.panY??.5)*100)}" data-f="panY"></div>
       <div class="slider"><span>拡大</span><input type="range" min="100" max="300" value="${Math.round((r.zoom||1)*100)}" data-f="zoom"></div>`:`<div class="note">写真の縦横比を保ったまま、左側の枠に収まるサイズで配置します</div>`}
-      <div class="row"><label class="btn small" for="filein">写真を変更</label><button class="btn small danger" data-act="pdel">写真を外す</button></div>
+      <div class="divider" style="margin:4px 0 0"></div>
+      <div class="lbl">印刷物での配置</div>
+      <div class="seg">${[['auto','自動'],['left','左'],['right','右'],['top','上'],['bottom','下']].map(([k,l])=>`<button class="${(r.photoPlace||'auto')===k?'on':''}" data-act="pplace" data-v="${k}">${l}</button>`).join('')}</div>
+      ${(r.photoPlace||'auto')==='auto'?'<div class="note">自動：用紙が横向きなら左、縦向きなら上</div>':''}
+      <div class="slider" style="grid-template-columns:44px 1fr 42px"><span>大きさ</span><input type="range" min="20" max="75" value="${Math.round(photoSizeOf(r,isSidePlace(r))*100)}" data-f="photoSize"><span id="psize-v">${Math.round(photoSizeOf(r,isSidePlace(r))*100)}%</span></div>
+      <div class="note">${isSidePlace(r)?'左右配置：ページ幅に対する写真の幅':'上下配置：ページの高さに対する写真の高さ'}（文字が多いときは自動で少し縮みます）</div>
+      <div class="row"><label class="btn small" for="filein">写真を変更</label><button class="btn small danger" data-act="pdel">写真を外す</button><button class="btn small ghost" data-act="preset">配置と大きさを戻す</button></div>
     </div>
   </div>`;
   drawPhotoMini();
 }
+function isSidePlace(r){const L=S.settings.lastOrient!=='portrait';const p=photoPlaceOf(r,L);return p==='left'||p==='right'}
 async function drawPhotoMini(){
   const c=$('#pmini'),r=S.cur;if(!c||!r||!r.photo)return;
   let img;try{img=await loadImg(photoURL(r.photo))}catch(e){return}
@@ -1139,7 +1161,7 @@ function refreshExport(){
   if(!exportTarget)return;updateSheet('export',paperBody(exportTarget));
   requestAnimationFrame(()=>drawInto($('#ex-canvas'),exportTarget));
   updatePaperBtn();
-  if(S.view==='edit'){fitPaper($('#pv-paper'));drawInto($('#pv'),S.cur)}
+  if(S.view==='edit'){fitPaper($('#pv-paper'));drawInto($('#pv'),S.cur);renderPhotoSec()}
   if(S.view==='view'){renderView(S.viewId)}
 }
 let exporting=false;
@@ -1247,8 +1269,15 @@ document.addEventListener('click',async e=>{
   const act=el.dataset.act,v=el.dataset.v;
   const row=el.closest('[data-id].ing,[data-id].step');
   const rid=row&&row.dataset.id;
+  if(el.closest('[data-sheet="cmenu"]')&&act!=='sheet-close')closeSheet('cmenu');
   switch(act){
     case'sheet-close':closeSheet(el.dataset.id);break;
+    case'card-menu':{const r=S.recipes.find(x=>x.id===el.dataset.id);if(!r)break;const id=esc(r.id);
+      openSheet('cmenu',r.title||'無題のレシピ',`<div class="menu-list"><button class="btn" data-act="open" data-id="${id}">開く</button><button class="btn" data-act="edit" data-id="${id}">編集する</button><button class="btn" data-act="export" data-id="${id}">PDFで保存</button><button class="btn" data-act="dup" data-id="${id}">複製する</button><button class="btn danger" data-act="del" data-id="${id}">削除する</button></div>`,'');break}
+    case'del-cur':{const r=S.cur;if(!r)break;if(!(await confirmBox(`「${r.title||'無題のレシピ'}」を削除します。元に戻せません。`,'削除する',true)))break;
+      saveSoon.cancel();const id=r.id,photo=r.photo,saved=r._saved;S.cur=null;
+      S.recipes=S.recipes.filter(x=>x.id!==id);if(saved){try{await Store.del(id)}catch(err){toast('削除できませんでした')}}
+      Store.deletePhotoIfUnused(photo,id);renderList();toast('削除しました');break}
     case'new':startEdit(null);break;
     case'open':renderView(el.dataset.id);break;
     case'home':renderList();break;
@@ -1260,7 +1289,7 @@ document.addEventListener('click',async e=>{
     case'del':{const r=S.recipes.find(x=>x.id===el.dataset.id);if(!r)break;if(!(await confirmBox(`「${r.title||'無題のレシピ'}」を削除します。元に戻せません。`,'削除する',true)))break;
       S.recipes=S.recipes.filter(x=>x.id!==r.id);try{await Store.del(r.id)}catch(err){toast('削除できませんでした')}
       Store.deletePhotoIfUnused(r.photo,r.id);renderList();toast('削除しました');break}
-    case'export':{const r=S.view==='edit'?S.cur:S.recipes.find(x=>x.id===(el.dataset.id||S.viewId));if(!r)break;if(S.view==='edit')saveNow();closeSheet('mpv');openExport(r,false);break}
+    case'export':{const r=S.view==='edit'&&!el.dataset.id?S.cur:S.recipes.find(x=>x.id===(el.dataset.id||S.viewId));if(!r)break;if(S.view==='edit')saveNow();closeSheet('mpv');openExport(r,false);break}
     case'paper':{const r=S.view==='edit'?S.cur:S.recipes.find(x=>x.id===(el.dataset.id||S.viewId));if(!r)break;closeSheet('mpv');openExport(r,true);break}
     case'size':S.settings.lastSize=v;saveSettingsSoon();refreshExport();break;
     case'orient':S.settings.lastOrient=v;saveSettingsSoon();refreshExport();break;
@@ -1272,6 +1301,8 @@ document.addEventListener('click',async e=>{
     /* photo */
     case'pmode':S.cur.photoMode=v;renderPhotoSec();changed();break;
     case'pratio':S.cur.cropRatio=v;renderPhotoSec();changed();break;
+    case'pplace':{const wasSide=isSidePlace(S.cur);S.cur.photoPlace=v;if(isSidePlace(S.cur)!==wasSide)S.cur.photoSize=null;renderPhotoSec();changed();break}
+    case'preset':S.cur.photoPlace='auto';S.cur.photoSize=null;renderPhotoSec();changed();break;
     case'pdel':{const old=S.cur.photo;S.cur.photo=null;renderPhotoSec();changed();setTimeout(()=>Store.deletePhotoIfUnused(old,S.cur&&S.cur.id),3000);break}
     /* ingredients */
     case'pick':openPicker();break;
@@ -1335,6 +1366,7 @@ document.addEventListener('input',e=>{
   }
   if(f==='panX'||f==='panY'){r[f]=(+el.value)/100;drawPhotoMini();changed();return}
   if(f==='zoom'){r.zoom=(+el.value)/100;drawPhotoMini();changed();return}
+  if(f==='photoSize'){r.photoSize=(+el.value)/100;const v=$('#psize-v');if(v)v.textContent=el.value+'%';changed();return}
   if(f==='title'||f==='servings'||f==='memo'){r[f]=el.value;if(el.tagName==='TEXTAREA')autoGrow(el);changed();return}
 });
 document.addEventListener('change',e=>{const el=e.target;if(el.dataset.f==='group'){el.dispatchEvent(new Event('input',{bubbles:true}))}});
