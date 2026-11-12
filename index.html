@@ -245,7 +245,7 @@ const S={
 };
 try{const ls=JSON.parse(localStorage.getItem('rn-settings')||'null'); if(ls) Object.assign(S.settings,ls);}catch(e){}
 
-function newRecipe(){return{id:'r'+uid(),title:'',servings:'',memo:'',photo:null,photoMode:'fit',cropRatio:'1:1',panX:.5,panY:.5,zoom:1,photoPlace:'auto',photoSize:null,groupStyle:'circled',groupLabels:['','','','','',''],ingredients:[],steps:[],createdAt:Date.now(),updatedAt:Date.now()}}
+function newRecipe(){return{id:'r'+uid(),title:'',servings:'',memo:'',photo:null,photoMode:'fit',cropRatio:'1:1',panX:.5,panY:.5,zoom:1,photoPlace:'auto',photoSize:null,textScale:1,titleScale:1,groupStyle:'circled',groupLabels:['','','','','',''],ingredients:[],steps:[],createdAt:Date.now(),updatedAt:Date.now()}}
 function normalize(r){
   const o=Object.assign(newRecipe(),r||{});
   if(!Array.isArray(o.ingredients))o.ingredients=[];
@@ -492,7 +492,8 @@ function layout(ctx,k,pg,r,o,f,draw){
     y+=5.2*U+4.2*U;
   }
   const title=(r.title||'').trim()||'無題のレシピ';
-  const ts=8.2*U*Math.min(1,0.35+f*0.65),tsp=0.12*ts;
+  const fr=Math.min(1,f/textScaleOf(r));
+  const ts=8.2*U*titleScaleOf(r)*Math.min(1,0.35+fr*0.65),tsp=0.12*ts;
   ctx.font=FONT.serif(ts);const tl=wrapText(ctx,title,cw,tsp).slice(0,2);
   if(draw){ctx.fillStyle='#262626';tl.forEach((ln,i)=>drawSp(ctx,ln,mx,y+ts*0.9+i*ts*1.25,tsp))}
   y+=ts*0.9+(tl.length-1)*ts*1.25+6*U;
@@ -514,7 +515,7 @@ function layout(ctx,k,pg,r,o,f,draw){
     if(e>bottom)over=true;
   }else{
     let y2=top;
-    const maxH=(bottom-top)*size*(0.45+0.55*f);
+    const maxH=(bottom-top)*size*(0.45+0.55*fr);
     if(hasPhoto&&place==='top'){const pr=photoRect(r,o.img,mx,top,cw,maxH,true);if(draw)drawPhoto(ctx,o.img,r,pr,1.1*U);y2=pr.y+pr.h+6.5*U}
     const lw=cw*(L?0.4:0.42),gap=(L?9:7)*U,rx=mx+lw+gap,rw=cw-lw-gap;
     let yl=ingBlock(ctx,mx,y2,lw,U,f,r,draw);
@@ -528,12 +529,16 @@ function layout(ctx,k,pg,r,o,f,draw){
 }
 function photoPlaceOf(r,L){const p=r.photoPlace;return['left','right','top','bottom'].includes(p)?p:(L?'left':'top')}
 function photoSizeOf(r,side){const v=+r.photoSize;return v>=0.2&&v<=0.75?v:(side?0.46:0.44)}
+function textScaleOf(r){const v=+r.textScale;return v>=0.5&&v<=2?v:1}
+function titleScaleOf(r){const v=+r.titleScale;return v>=0.5&&v<=2?v:1}
 function renderPage(ctx,W,H,pg,r,o){
-  const k=W/pg.w;
+  const k=W/pg.w,base=textScaleOf(r);
   ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#fff';ctx.fillRect(0,0,W,H);ctx.textBaseline='alphabetic';
-  let f=1;
-  for(;f>0.4;f-=0.03){if(!layout(ctx,k,pg,r,o,f,false).over)break}
-  layout(ctx,k,pg,r,o,Math.max(f,0.4),true);
+  let f=base;
+  for(;f>0.4;f-=0.03*Math.max(1,base)){if(!layout(ctx,k,pg,r,o,f,false).over)break}
+  f=Math.max(f,0.4);
+  layout(ctx,k,pg,r,o,f,true);
+  return f/base;
 }
 const imgCache=new Map();
 function loadImg(url){
@@ -569,7 +574,7 @@ async function drawInto(canvas,r){
   await ensureFonts(r,S.settings.header);
   if(canvas._seq!==seq||!canvas.isConnected) return;
   const off=document.createElement('canvas');off.width=W;off.height=H;
-  renderPage(off.getContext('2d'),W,H,pg,r,{img,header:S.settings.header});
+  canvas._fit=renderPage(off.getContext('2d'),W,H,pg,r,{img,header:S.settings.header});
   if(canvas.width!==W||canvas.height!==H){canvas.width=W;canvas.height=H}
   canvas.getContext('2d').drawImage(off,0,0);
 }
@@ -862,7 +867,7 @@ function renderView(id){
 
 /* ================= editor ================= */
 const saveSoon=debounce(()=>saveNow(),900);
-const previewSoon=debounce(()=>{drawInto($('#pv'),S.cur);drawInto($('#pv-m'),S.cur)},200);
+const previewSoon=debounce(()=>{const c=$('#pv');drawInto(c,S.cur).then(()=>updateFitNote(c,'ed',S.cur));drawInto($('#pv-m'),S.cur)},200);
 async function saveNow(){
   saveSoon.cancel();
   if(!S.cur)return;
@@ -907,6 +912,7 @@ function renderEditor(){
       <section class="sec" id="sec-ings"></section>
       <section class="sec" id="sec-steps"></section>
       <section class="sec"><h3>メモ（任意）</h3><textarea class="fld" data-f="memo" rows="2" placeholder="コツ・保存方法など。印刷物にも小さく載ります">${esc(r.memo)}</textarea></section>
+      <section class="sec" id="sec-text">${textSecInner()}</section>
       <div style="padding:4px 12px 24px;display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap"><button class="btn" data-act="leave">編集を終える</button><button class="btn danger" data-act="del-cur">このレシピを削除</button></div>
     </div>
     <div class="pv-pane">
@@ -922,6 +928,7 @@ function renderEditor(){
   fitPaper($('#pv-paper'));
   requestAnimationFrame(()=>drawInto($('#pv'),r));
 }
+function textSecInner(){return`<h3>印刷の文字の大きさ</h3>${textSliders(S.cur,'f','ed')}<div class="row" style="margin-top:8px"><button class="btn small ghost" data-act="ed-treset">文字の大きさを戻す</button></div>`}
 function updatePaperBtn(){const b=$('#paperbtn');if(!b)return;const s=SIZES.find(x=>x.k===S.settings.lastSize)||SIZES[0];b.textContent=`用紙：${s.l} ${S.settings.lastOrient==='portrait'?'縦':'横'}`}
 
 /* ---- photo ---- */
@@ -1200,16 +1207,31 @@ function paperBody(r){
   <div class="slider"><span>拡大</span><input type="range" min="100" max="300" value="${Math.round((r.zoom||1)*100)}" data-exf="zoom"></div>`:''}
   <div class="row" style="margin-top:8px"><button class="btn small ghost" data-act="ex-preset">写真の配置と大きさを戻す</button></div>
   <div class="divider"></div>`:''}
+  <div class="bl">文字の大きさ</div>
+  ${textSliders(r,'exf','ex')}
+  <div class="row" style="margin-top:8px"><button class="btn small ghost" data-act="ex-treset">文字の大きさを戻す</button></div>
+  <div class="divider"></div>
   <div class="bl">用紙サイズ</div>
   <div class="sizegrid">${SIZES.map(s=>`<button class="sizebtn ${S.settings.lastSize===s.k?'on':''}" data-act="size" data-v="${s.k}">${s.l}<small>${s.w}×${s.h}mm</small></button>`).join('')}</div>
   <div class="bl">向き</div>
   <div class="seg"><button class="${S.settings.lastOrient==='landscape'?'on':''}" data-act="orient" data-v="landscape">横</button><button class="${S.settings.lastOrient==='portrait'?'on':''}" data-act="orient" data-v="portrait">縦</button></div>
   <p class="hint">選んだサイズは次回も使われます。文字量が多いときは自動で文字を小さくして1枚に収めます。</p>`;
 }
+function textSliders(r,attr,pre){
+  const a=Math.round(textScaleOf(r)*100),b=Math.round(titleScaleOf(r)*100);
+  return`<div class="slider" style="grid-template-columns:52px 1fr 46px"><span>本文</span><input type="range" min="70" max="160" step="5" value="${a}" data-${attr}="textScale"><span id="${pre}-tsize">${a}%</span></div>
+  <div class="slider" style="grid-template-columns:52px 1fr 46px"><span>料理名</span><input type="range" min="60" max="160" step="5" value="${b}" data-${attr}="titleScale"><span id="${pre}-ttsize">${b}%</span></div>
+  <div class="note" id="${pre}-tfit"></div>`;
+}
+function updateFitNote(canvas,pre,r){
+  const n=$('#'+pre+'-tfit');if(!n||!canvas||!r)return;
+  const fit=canvas._fit||1;
+  n.textContent=fit<0.985?`文字が多くて1枚に入りきらないため、本文を自動で${Math.round(fit*textScaleOf(r)*100)}%まで縮めています`:'';
+}
 const exSave=debounce(()=>{const r=exportTarget;if(!r||r===S.cur)return;r.updatedAt=Date.now();Store.put(clone(r)).catch(()=>toast('保存できませんでした'))},700);
 function exChanged(){if(!exportTarget)return;if(exportTarget===S.cur){S.cur.updatedAt=Date.now();saveSoon()}else exSave()}
 let exRaf=0;
-function exRedraw(){cancelAnimationFrame(exRaf);exRaf=requestAnimationFrame(()=>drawInto($('#ex-canvas'),exportTarget))}
+function exRedraw(){cancelAnimationFrame(exRaf);exRaf=requestAnimationFrame(()=>{const c=$('#ex-canvas');drawInto(c,exportTarget).then(()=>updateFitNote(c,'ex',exportTarget))})}
 let exportTarget=null;
 function openExport(r,justPaper){
   exportTarget=r;
@@ -1220,7 +1242,7 @@ function openExport(r,justPaper){
 }
 function refreshExport(){
   if(!exportTarget)return;updateSheet('export',paperBody(exportTarget));
-  requestAnimationFrame(()=>drawInto($('#ex-canvas'),exportTarget));
+  exRedraw();
   updatePaperBtn();
   if(S.view==='edit'){fitPaper($('#pv-paper'));drawInto($('#pv'),S.cur);renderPhotoSec()}
   if(S.view==='view'){renderView(S.viewId)}
@@ -1356,6 +1378,8 @@ document.addEventListener('click',async e=>{
     case'orient':S.settings.lastOrient=v;saveSettingsSoon();refreshExport();break;
     case'ex-pdf':doExportPdf();break;
     case'ex-place':{const r=exportTarget;if(!r)break;const was=isSidePlace(r);r.photoPlace=v;if(isSidePlace(r)!==was)r.photoSize=null;exChanged();refreshExport();break}
+    case'ex-treset':{const r=exportTarget;if(!r)break;r.textScale=1;r.titleScale=1;exChanged();refreshExport();break}
+    case'ed-treset':{S.cur.textScale=1;S.cur.titleScale=1;const el2=$('#sec-text');if(el2)el2.innerHTML=textSecInner();changed();break}
     case'ex-preset':{const r=exportTarget;if(!r)break;r.photoPlace='auto';r.photoSize=null;exChanged();refreshExport();break}
     case'backup':doBackup();break;
     case'icon-dl':saveFile('recipe-note-icon.png',dataURLtoBlob(ICON_PNG));break;
@@ -1414,6 +1438,7 @@ document.addEventListener('input',e=>{
   if(el.dataset.exf&&exportTarget){
     const k=el.dataset.exf,v=+el.value;const r=exportTarget;
     if(k==='photoSize'){r.photoSize=v/100;const l=$('#ex-psize');if(l)l.textContent=v+'%'}
+    else if(k==='textScale'||k==='titleScale'){r[k]=v/100;const l=$(k==='textScale'?'#ex-tsize':'#ex-ttsize');if(l)l.textContent=v+'%'}
     else if(k==='zoom')r.zoom=v/100;else r[k]=v/100;
     exChanged();exRedraw();return;
   }
@@ -1435,6 +1460,7 @@ document.addEventListener('input',e=>{
   }
   if(f==='panX'||f==='panY'){r[f]=(+el.value)/100;drawPhotoMini();changed();return}
   if(f==='zoom'){r.zoom=(+el.value)/100;drawPhotoMini();changed();return}
+  if(f==='textScale'||f==='titleScale'){r[f]=(+el.value)/100;const l=$(f==='textScale'?'#ed-tsize':'#ed-ttsize');if(l)l.textContent=el.value+'%';changed();return}
   if(f==='photoSize'){r.photoSize=(+el.value)/100;const v=$('#psize-v');if(v)v.textContent=el.value+'%';changed();return}
   if(f==='title'||f==='servings'||f==='memo'){r[f]=el.value;if(el.tagName==='TEXTAREA')autoGrow(el);changed();return}
 });
